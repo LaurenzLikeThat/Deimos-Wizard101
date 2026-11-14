@@ -2,6 +2,7 @@ import asyncio
 import struct
 from typing import Any
 import warnings
+import traceback
 
 import pymem
 import pymem.exception
@@ -9,6 +10,8 @@ from loguru import logger
 
 from wizwalker import HookAlreadyActivated, HookNotActive, HookNotReady
 from .hooks import (
+    ChatHook,
+    ChatSendHook,
     ClientHook,
     MouselessCursorMoveHook,
     PlayerHook,
@@ -17,6 +20,11 @@ from .hooks import (
     RootWindowHook,
     RenderContextHook,
     MovementTeleportHook,
+    DropsToggleHook,
+    DanceGameMovesHook,
+    AhmarraAutoPuzzleHook,
+    UpdateZoneCounterHook,
+    ServerMoveSnapbackHook,
     MemoryHook
 )
 from .memory_reader import MemoryReader, Primitive
@@ -29,14 +37,13 @@ class HookHandler(MemoryReader):
     """
 
     AUTOBOT_PATTERN = (
-        rb"\x48\x89\x5C\x24.\x48\x89\x74\x24.\x48\x89\x7C\x24."
-        rb"\x55\x41\x54\x41\x55\x41\x56\x41\x57"
-        rb"\x48\x8D\xAC\x24....\x48\x81\xEC...."
-        rb"\x48\x8B\x05....\x48\x33\xC4\x48\x89\x85...."
-        rb"\x4C\x8B\xF1.......\x80......\x0F\x84...."
+        rb"\x48\x8B\xC4\x55\x41\x54\x41\x55\x41\x56\x41\x57......."
+        rb"\x48......\x48.......\x48\x89\x58\x10\x48\x89"
+        rb"\x70\x18\x48\x89\x78\x20.......\x48\x33\xC4....."
+        rb"..\x4C\x8B\xE9.......\x80......\x0F"
     )
     # rounded down
-    AUTOBOT_SIZE = 4100
+    AUTOBOT_SIZE = 3900
 
     def __init__(self, process: pymem.Pymem, client):
         super().__init__(process)
@@ -53,6 +60,7 @@ class HookHandler(MemoryReader):
         self._base_addrs = {}
 
         self._hook_cache = {}
+        self._dance_moves_transtable = str.maketrans("abcd", "WDSA")
 
     async def _get_open_autobot_address(self, size: int) -> int:
         if self._autobot_pos + size > self.AUTOBOT_SIZE:
@@ -190,6 +198,10 @@ class HookHandler(MemoryReader):
         await self.activate_root_window_hook(wait_for_ready=False)
         await self.activate_render_context_hook(wait_for_ready=False)
         await self.activate_movement_teleport_hook(wait_for_ready=False)
+        await self.activate_drops_toggle_hook(wait_for_ready=False)
+        await self.activate_auto_puzzle_hook(wait_for_ready=False)
+        await self.activate_update_zone_counter_hook(wait_for_ready=False)
+        await self.activate_server_move_snapback_hook(wait_for_ready=False)
 
         if wait_for_ready:
             wait_tasks = []
@@ -537,6 +549,203 @@ class HookHandler(MemoryReader):
 
         return addr
 
+    async def activate_drops_toggle_hook(
+        self, *, wait_for_ready: bool = False, timeout: float = None
+    ):
+        
+        if self._check_if_hook_active(DropsToggleHook):
+            raise HookAlreadyActivated("Drops toggle")
+
+        await self._check_for_autobot()
+
+        drops_toggle_hook = DropsToggleHook(self)
+        await drops_toggle_hook.hook()
+
+        self._active_hooks[DropsToggleHook] = drops_toggle_hook
+        self._base_addrs["disable_drops_bool"] = drops_toggle_hook.disable_drops_bool
+
+    async def deactivate_drops_toggle_hook(self):
+
+        if not self._check_if_hook_active(DropsToggleHook):
+            raise HookNotActive("Drops toggle")
+
+        drops_toggle_hook = self._active_hooks.pop(DropsToggleHook)
+        await drops_toggle_hook.unhook()
+
+        del self._base_addrs["disable_drops_bool"]
+
+    async def read_disable_drops_bool(self) -> int:
+        addr = self._base_addrs.get("disable_drops_bool")
+
+        if addr is None:
+            raise HookNotActive("Drops toggle")
+
+        return addr
+
+    async def activate_auto_puzzle_hook(
+        self, *, wait_for_ready: bool = False, timeout: float = None
+    ):
+
+        if self._check_if_hook_active(AhmarraAutoPuzzleHook):
+            raise HookAlreadyActivated("Auto puzzle")
+
+        await self._check_for_autobot()
+
+        auto_puzzle_hook = AhmarraAutoPuzzleHook(self)
+        await auto_puzzle_hook.hook()
+
+        self._active_hooks[AhmarraAutoPuzzleHook] = auto_puzzle_hook
+        self._base_addrs["auto_puzzle_bool"] = auto_puzzle_hook.auto_puzzle_bool
+
+    async def deactivate_auto_puzzle_hook(self):
+
+        if not self._check_if_hook_active(AhmarraAutoPuzzleHook):
+            raise HookNotActive("Auto puzzle")
+
+        auto_puzzle_hook = self._active_hooks.pop(AhmarraAutoPuzzleHook)
+        await auto_puzzle_hook.unhook()
+
+        del self._base_addrs["auto_puzzle_bool"]
+
+    async def read_auto_puzzle_bool(self) -> int:
+        addr = self._base_addrs.get("auto_puzzle_bool")
+
+        if addr is None:
+            raise HookNotActive("Auto puzzle")
+
+        return addr
+
+    async def activate_update_zone_counter_hook(
+        self, *, wait_for_ready: bool = False, timeout: float = None
+    ):
+
+        if self._check_if_hook_active(UpdateZoneCounterHook):
+            raise HookAlreadyActivated("Update Zone Counter")
+
+        await self._check_for_autobot()
+
+        update_zone_counter_hook = UpdateZoneCounterHook(self)
+        await update_zone_counter_hook.hook()
+
+        self._active_hooks[UpdateZoneCounterHook] = update_zone_counter_hook
+        self._base_addrs["server_teleport_snapback_bool"] = update_zone_counter_hook.server_teleport_snapback_bool
+    
+    async def deactivate_update_zone_counter_hook(self):
+
+        if not self._check_if_hook_active(UpdateZoneCounterHook):
+            raise HookNotActive("Update Zone Counter")
+
+        update_zone_counter_hook = self._active_hooks.pop(UpdateZoneCounterHook)
+        await update_zone_counter_hook.unhook()
+
+        del self._base_addrs["server_teleport_snapback_bool"]
+
+    async def read_server_teleport_snapback_bool(self) -> int:
+        addr = self._base_addrs.get("server_teleport_snapback_bool")
+
+        if addr is None:
+            raise HookNotActive("Update Zone Counter")
+
+        return addr
+
+    async def activate_server_move_snapback_hook(
+        self, *, wait_for_ready: bool = False, timeout: float = None
+    ):
+
+        if self._check_if_hook_active(ServerMoveSnapbackHook):
+            raise HookAlreadyActivated("Server move snapback")
+
+        await self._check_for_autobot()
+
+        server_move_snapback_hook = ServerMoveSnapbackHook(self)
+        await server_move_snapback_hook.hook()
+
+        self._active_hooks[ServerMoveSnapbackHook] = server_move_snapback_hook
+        self._base_addrs["server_move_snapback_bool"] = server_move_snapback_hook.server_move_snapback_bool
+
+    async def deactivate_server_move_snapback_hook(self):
+
+        if not self._check_if_hook_active(ServerMoveSnapbackHook):
+            raise HookNotActive("Server move snapback")
+
+        server_move_snapback_hook = self._active_hooks.pop(ServerMoveSnapbackHook)
+        await server_move_snapback_hook.unhook()
+
+        del self._base_addrs["server_move_snapback_bool"]
+
+    async def read_server_move_snapback_bool(self) -> int:
+        addr = self._base_addrs.get("server_move_snapback_bool")
+
+        if addr is None:
+            raise HookNotActive("Server move snapback")
+
+        return addr
+
+    async def activate_dance_game_moves_hook(
+        self, *, wait_for_ready: bool = False, timeout: float = None
+    ):
+        if self._check_if_hook_active(DanceGameMovesHook):
+            raise HookAlreadyActivated("DanceGameMovesHook")
+
+        await self._check_for_autobot()
+
+        dance_game_hook = DanceGameMovesHook(self)
+        await dance_game_hook.hook()
+
+        self._active_hooks[DanceGameMovesHook] = dance_game_hook
+        #self._active_hooks.append(dance_game_hook)
+        self._base_addrs["dance_game_moves"] = dance_game_hook.dance_game_moves
+
+        if wait_for_ready:
+            await self._wait_for_value(dance_game_hook.dance_game_moves, timeout)
+
+    async def deactivate_dance_game_moves_hook(self):
+        if not self._check_if_hook_active(DanceGameMovesHook):
+            raise HookNotActive("DanceGameMovesHook")
+
+        dance_game_hook = self._get_hook_by_type(DanceGameMovesHook)
+        #self._active_hooks.remove(dance_game_hook)
+        del self._active_hooks[DanceGameMovesHook]
+        await dance_game_hook.unhook()
+
+        del self._base_addrs["dance_game_moves"]
+
+    async def attempt_activate_dance_hook(self, sleep_time: float = 0.1):
+        # Attempts to activate dance hook, in a try block in case it's already off for this client
+        if not self.client.dance_hook_status:
+            try:
+                await self.activate_dance_game_moves_hook()
+            except:
+                logger.debug("failed to activate dance hook")
+                logger.debug(traceback.print_exc())
+                pass
+
+            self.client.dance_hook_status = True
+        await asyncio.sleep(sleep_time)
+
+    async def attempt_deactivate_dance_hook(self, sleep_time: float = 0.1):
+        # Attempts to deactivate dance hook, in a try block in case it's already off for this client
+        if self.client.dance_hook_status:
+            try:
+                await self.deactivate_dance_game_moves_hook()
+            except:
+                pass
+
+            self.client.dance_hook_status = False
+        await asyncio.sleep(sleep_time)
+
+    async def read_current_dance_game_moves(self) -> str:
+        try:
+            addr = self._base_addrs["dance_game_moves"]
+        except KeyError:
+            raise HookNotActive("DanceGameMovesHook")
+
+        try:
+            moves = await self.read_bytes(addr, 8)
+        except pymem.exception.MemoryReadError:
+            raise HookNotReady("DanceGameMovesHook")
+        return moves.partition(b"\0")[0].decode().translate(self._dance_moves_transtable)
+
     # nothing to wait for in this hook
     async def activate_mouseless_cursor_hook(self):
         """
@@ -583,3 +792,88 @@ class HookHandler(MemoryReader):
         packed_position = struct.pack("<ii", x, y)
 
         await self.write_bytes(addr, packed_position)
+
+    async def activate_chat_hook(
+        self, *, wait_for_ready: bool = True, timeout: float = None
+    ):
+        """Activate the chat hook to capture incoming directed chat messages.
+
+        The hook fires on every incoming MSG_DirectedChat, extracting the
+        sender's GID and message text to persistent export buffers.
+
+        Keyword Args:
+            wait_for_ready: Wait for the first message to arrive
+            timeout: How long to wait (None for no timeout)
+        """
+        if self._check_if_hook_active(ChatHook):
+            raise HookAlreadyActivated("Chat")
+
+        await self._check_for_autobot()
+
+        chat_hook = ChatHook(self)
+        await chat_hook.hook()
+
+        self._active_hooks[ChatHook] = chat_hook
+        self._base_addrs["chat_owner"] = chat_hook.chat_owner_addr
+        self._base_addrs["recv_source_gid"] = chat_hook.recv_source_gid
+        self._base_addrs["recv_message_buf"] = chat_hook.recv_message_buf
+        self._base_addrs["recv_message_len"] = chat_hook.recv_message_len
+        self._base_addrs["recv_counter"] = chat_hook.recv_counter
+
+        if wait_for_ready:
+            await self._wait_for_value(chat_hook.recv_counter, timeout)
+
+    async def deactivate_chat_hook(self):
+        """Deactivate the chat hook."""
+        if not self._check_if_hook_active(ChatHook):
+            raise HookNotActive("Chat")
+
+        hook = self._active_hooks.pop(ChatHook)
+        await hook.unhook()
+
+        del self._base_addrs["chat_owner"]
+        del self._base_addrs["recv_source_gid"]
+        del self._base_addrs["recv_message_buf"]
+        del self._base_addrs["recv_message_len"]
+        del self._base_addrs["recv_counter"]
+
+    async def read_chat_owner_base(self) -> int:
+        """Read the chat owner (chat module) base address.
+
+        Returns:
+            The chat module base address
+        """
+        return await self._read_hook_base_addr("chat_owner", "Chat")
+
+    async def activate_chat_send_hook(self):
+        """Activate the chat send hook on the main game loop.
+
+        This hooks the game's main loop so that send_msg() executes
+        on the main thread where chat operations are safe.
+        """
+        if self._check_if_hook_active(ChatSendHook):
+            raise HookAlreadyActivated("Chat send")
+
+        await self._check_for_autobot()
+
+        hook = ChatSendHook(self)
+        await hook.hook()
+
+        self._active_hooks[ChatSendHook] = hook
+        self._base_addrs["send_trigger"] = hook.send_trigger
+        self._base_addrs["send_struct"] = hook.send_struct
+        self._base_addrs["buddy_trigger"] = hook.buddy_trigger
+        self._base_addrs["buddy_obj"] = hook.buddy_obj
+
+    async def deactivate_chat_send_hook(self):
+        """Deactivate the chat send hook."""
+        if not self._check_if_hook_active(ChatSendHook):
+            raise HookNotActive("Chat send")
+
+        hook = self._active_hooks.pop(ChatSendHook)
+        await hook.unhook()
+
+        del self._base_addrs["send_trigger"]
+        del self._base_addrs["send_struct"]
+        del self._base_addrs["buddy_trigger"]
+        del self._base_addrs["buddy_obj"]

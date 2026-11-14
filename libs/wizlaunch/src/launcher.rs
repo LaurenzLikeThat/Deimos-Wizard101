@@ -1,7 +1,7 @@
 use crate::errors::VaultError;
 use std::collections::HashSet;
 use std::ffi::c_void;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -44,10 +44,22 @@ pub fn get_wizard_handles() -> Vec<isize> {
     handles
 }
 
+/// Normalize a user-supplied path to the platform's native separators.
+fn normalize_path(path: &str) -> PathBuf {
+    Path::new(path).components().collect()
+}
+
 /// Launch the Wizard101 game process.
 /// `login_server` is "host:port" (e.g. "login.us.wizard101.com:12000").
-pub fn launch_game(game_path: &str, login_server: &str) -> Result<(), VaultError> {
-    let bin_dir = Path::new(game_path).join("Bin");
+/// When `steam` is true, the client is started in Steam mode (`-ST`); callers
+/// are responsible for ensuring Steam is ready and `steam_appid.txt` is present
+/// (see [`crate::steam`]).
+///
+/// Returns the spawned process ID. The client doesn't re-exec, so this PID owns
+/// the resulting game window — callers can match a new window back to the exact
+/// spawn via [`get_window_pid`].
+pub fn launch_game(game_path: &str, login_server: &str, steam: bool) -> Result<u32, VaultError> {
+    let bin_dir = normalize_path(game_path).join("Bin");
     let exe = bin_dir.join("WizardGraphicalClient.exe");
 
     if !exe.exists() {
@@ -63,7 +75,11 @@ pub fn launch_game(game_path: &str, login_server: &str) -> Result<(), VaultError
         ))
     })?;
 
-    Command::new(&exe)
+    let mut cmd = Command::new(&exe);
+    if steam {
+        cmd.arg("-ST");
+    }
+    let child = cmd
         .arg("-L")
         .arg(host)
         .arg(port)
@@ -71,7 +87,7 @@ pub fn launch_game(game_path: &str, login_server: &str) -> Result<(), VaultError
         .spawn()
         .map_err(|e| VaultError::LaunchFailed(e.to_string()))?;
 
-    Ok(())
+    Ok(child.id())
 }
 
 /// Wait for a new Wizard101 window to appear that wasn't in `before_handles`.
@@ -95,6 +111,15 @@ pub fn wait_for_new_handle(
     Err(VaultError::LaunchTimeout(
         "No new wizard window detected".to_string(),
     ))
+}
+
+/// Get the process ID that owns a window handle (0 if the handle is invalid).
+pub fn get_window_pid(hwnd: isize) -> u32 {
+    let mut pid: u32 = 0;
+    unsafe {
+        GetWindowThreadProcessId(hwnd_from_isize(hwnd), Some(&mut pid));
+    }
+    pid
 }
 
 /// Disable or enable a window (prevents user input during login).

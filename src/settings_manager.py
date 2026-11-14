@@ -41,8 +41,19 @@ DEFAULT_SETTINGS = {
     "kill_minions_first": False,
     "automatic_team_based_combat": False,
     "discard_duplicate_cards": True,
+    # [client]
+    # Arms freeform window resizing on game clients: a draggable resize border plus
+    # automatic camera-aspect correction so the 3D view fills any window size
+    # undistorted. Disable to leave game windows untouched.
+    "client_resizing": True,
     # [launcher]
     "remember_chosen_clients": False,
+    # Verify/patch game files (via the bundled wizpatch binary) before launching.
+    # Opt-in: adds a CRC check + downloads over the network to each launch.
+    "verify_patch_files": False,
+    # [updates]
+    "check_for_updates": True,
+    "auto_install_updates": False,
 }
 
 RESTART_REQUIRED_KEYS = {"locale"}
@@ -80,7 +91,7 @@ DEFAULT_HOTKEYS = {
     "toggle_speed": {"key": "F5", "modifiers": []},
     "toggle_combat": {"key": "NINE", "modifiers": []},
     "toggle_dialogue": {"key": "F4", "modifiers": []},
-    # "toggle_dialogue_side_quests": {"key": "F4", "modifiers": ["SHIFT"]},
+    "toggle_dialogue_side_quests": {"key": "F4", "modifiers": ["SHIFT"]},
     "toggle_sigil": {"key": "F2", "modifiers": []},
     "toggle_questing": {"key": "F3", "modifiers": []},
     "toggle_freecam": {"key": "F1", "modifiers": []},
@@ -93,6 +104,7 @@ DEFAULT_HOTKEYS = {
     "kill_tool": {"key": "F9", "modifiers": []},
     "toggle_auto_pet": None,
     "toggle_auto_potion": None,
+    "toggle_drops": None,
 }
 
 # Maps ini key names -> action_id
@@ -309,7 +321,7 @@ class DeimosSettings:
                 # Special case: dialogue also has shift variant
                 if action_id == "toggle_dialogue":
                     hotkeys["toggle_dialogue"] = {"key": value, "modifiers": []}
-                    # hotkeys["toggle_dialogue_side_quests"] = {"key": value, "modifiers": ["SHIFT"]}
+                    hotkeys["toggle_dialogue_side_quests"] = {"key": value, "modifiers": ["SHIFT"]}
                 elif action_id == "toggle_freecam":
                     hotkeys["toggle_freecam"] = {"key": value, "modifiers": []}
                     hotkeys["freecam_tp"] = {"key": value, "modifiers": ["SHIFT"]}
